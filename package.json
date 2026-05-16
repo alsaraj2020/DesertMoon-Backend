@@ -1,0 +1,15 @@
+{
+  "name": "desertmoon-backend",
+  "version": "2.1.0",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.95.4",
+    "@solana/spl-token": "^0.4.9",
+    "express": "^4.19.2",
+    "cors": "^2.8.5"
+  }
+}
