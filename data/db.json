@@ -1,0 +1,18 @@
+{
+  "purchases": [
+    {
+      "wallet": "DgsK21QaQVcRLhJyvAHDXqVyf3ZsJ9Cgkg1cPJKYmHx9",
+      "asset": "SOL",
+      "amount": 0.01,
+      "solAmount": 0.01,
+      "txSignature": "2Zb7Uvc6pC9fgdtuWLrEbkWdN8EcpsUmgC8uGPjH55U169Lzm4Sd7SWEhSciUrwzCsKXRYr9CYkUQV5ocjbPZfTg",
+      "solPriceUsd": 94.89,
+      "tokenPriceUsd": 0.005,
+      "usdValue": 0.9489000000000001,
+      "tokenAmount": 189.78,
+      "slot": 419266037,
+      "blockTime": 1778593404,
+      "createdAt": "2026-05-12T13:43:31.078Z"
+    }
+  ]
+}
