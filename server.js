@@ -27,7 +27,7 @@ const PORT = Number(process.env.PORT || 8787);
 
 const CFG = {
   rpcUrl: process.env.RPC_URL || 'https://solana-mainnet.core.chainstack.com/3dca3b93382ef27f6078c2e0ce27a076',
-  treasuryWallet: process.env.TREASURY_WALLET || 'DgsK21QaQVcRLhJyvAHDXqVyf3ZsJ9Cgkg1cPJKYmHx9',
+  treasuryWallet: process.env.TREASURY_WALLET || '9JVtaDxzymteMrTKNGhsyGcNqsFfY7ce3LqdXhij4McC',
   tokenSymbol: process.env.TOKEN_SYMBOL || 'DMOON',
   totalSupply: Number(process.env.TOTAL_SUPPLY || 1000000000),
   presaleAllocationPercent: Number(process.env.PRESALE_ALLOCATION_PERCENT || 30),
