@@ -68,9 +68,39 @@ const connection = new Connection(
   'confirmed'
 );
 
-const treasuryPublicKey = new PublicKey(
-  CFG.treasuryWallet
-);
+const DATA_DIR = path.join(process.cwd(), 'data');
+
+const DB_FILE = path.join(DATA_DIR, 'db.json');
+
+function ensureDb() {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+
+  if (!fs.existsSync(DB_FILE)) {
+    fs.writeFileSync(
+      DB_FILE,
+      JSON.stringify({ purchases: [] }, null, 2)
+    );
+  }
+}
+
+function loadDb() {
+  ensureDb();
+
+  return JSON.parse(
+    fs.readFileSync(DB_FILE, 'utf8')
+  );
+}
+
+function saveDb(db) {
+  ensureDb();
+
+  fs.writeFileSync(
+    DB_FILE,
+    JSON.stringify(db, null, 2)
+  );
+}
 
 let liveSolPriceUsd = CFG.fallbackSolPriceUsd;
 
@@ -146,76 +176,116 @@ function getPriceTier(totalRaisedSol) {
   };
 }
 
-async function getAllPurchases() {
-  const signatures =
-    await connection.getSignaturesForAddress(
-      treasuryPublicKey,
-      { limit: 1000 }
+function totals(db) {
+  const totalRaisedSol =
+    db.purchases.reduce(
+      (sum, p) => sum + Number(p.solAmount || 0),
+      0
     );
 
-  const purchases = [];
+  return {
+    totalRaisedSol,
 
-  for (const sig of signatures) {
-    try {
-      const tx =
-        await connection.getParsedTransaction(
-          sig.signature,
-          {
-            maxSupportedTransactionVersion: 0,
-          }
-        );
+    hardCapSol: CFG.hardCapSol,
 
-      if (!tx) continue;
+    percentFunded:
+      CFG.hardCapSol > 0
+        ? (totalRaisedSol / CFG.hardCapSol) * 100
+        : 0,
+  };
+}
 
-      const instructions =
-        tx.transaction.message.instructions || [];
+function walletTotals(db, wallet) {
+  const list = db.purchases.filter(
+    (p) =>
+      String(p.wallet).toLowerCase() ===
+      String(wallet).toLowerCase()
+  );
 
-      for (const ix of instructions) {
-        if (
-          ix.program === 'system' &&
-          ix.parsed?.type === 'transfer'
-        ) {
-          const info = ix.parsed.info;
+  const solPaid =
+    list.reduce(
+      (sum, p) => sum + Number(p.solAmount || 0),
+      0
+    );
 
-          if (
-            info.destination ===
-            CFG.treasuryWallet
-          ) {
-            const solAmount =
-              Number(info.lamports) /
-              LAMPORTS_PER_SOL;
+  const purchasedTokens =
+    list.reduce(
+      (sum, p) => sum + Number(p.tokenAmount || 0),
+      0
+    );
 
-            const solPriceUsd =
-              await getLiveSolPriceUsd();
+  return {
+    wallet,
 
-            const totalBefore =
-              purchases.reduce(
-                (sum, p) => sum + p.solAmount,
-                0
-              );
+    tokenSymbol: CFG.tokenSymbol,
 
-            const tier =
-              getPriceTier(totalBefore).current;
+    solPaid,
 
-            const usdValue =
-              solAmount * solPriceUsd;
+    purchasedTokens,
+  };
+}
 
-            const tokenAmount =
-              usdValue / tier.priceUsd;
+function tokenInfo(totalRaisedSol = 0) {
+  const tier = getPriceTier(totalRaisedSol);
 
-            purchases.push({
-              wallet: info.source,
-              solAmount,
-              tokenAmount,
-              txSignature: sig.signature,
-            });
-          }
-        }
-      }
-    } catch {}
-  }
+  return {
+    symbol: CFG.tokenSymbol,
 
-  return purchases;
+    totalSupply: CFG.totalSupply,
+
+    presaleAllocationPercent:
+      CFG.presaleAllocationPercent,
+
+    presaleAllocationTokens:
+      (CFG.totalSupply *
+        CFG.presaleAllocationPercent) /
+      100,
+
+    teamAllocationPercent:
+      CFG.teamPercent,
+
+    teamAllocationTokens:
+      (CFG.totalSupply * CFG.teamPercent) /
+      100,
+
+    presalePriceUsd:
+      CFG.presalePriceUsd,
+
+    currentPriceUsd:
+      tier.current.priceUsd,
+
+    listingPriceUsd:
+      CFG.listingPriceUsd,
+
+    solPriceUsd:
+      liveSolPriceUsd,
+
+    blockchain: 'Solana',
+
+    maxContributionSol:
+      CFG.maxWalletCapSol,
+
+    softCapSol:
+      CFG.softCapSol,
+
+    hardCapSol:
+      CFG.hardCapSol,
+
+    teamCliffMonths:
+      CFG.teamCliffMonths,
+
+    teamVestingMonths:
+      CFG.teamVestingMonths,
+
+    currentTier:
+      tier.current,
+
+    nextTier:
+      tier.next,
+
+    priceTiers:
+      tier.tiers,
+  };
 }
 
 app.get('/health', (req, res) => {
@@ -226,87 +296,18 @@ app.get('/health', (req, res) => {
 
 app.get('/stats', async (req, res) => {
   try {
-    const purchases =
-      await getAllPurchases();
+    await getLiveSolPriceUsd();
 
-    const totalRaisedSol =
-      purchases.reduce(
-        (sum, p) => sum + p.solAmount,
-        0
-      );
+    const db = loadDb();
 
-    const percentFunded =
-      (totalRaisedSol / CFG.hardCapSol) * 100;
-
-    const tierData =
-      getPriceTier(totalRaisedSol);
+    const t = totals(db);
 
     res.json({
-      totals: {
-        totalRaisedSol,
-        percentFunded,
-        hardCapSol: CFG.hardCapSol,
-      },
+      totals: t,
 
-      token: {
-        symbol: CFG.tokenSymbol,
-
-        totalSupply: CFG.totalSupply,
-
-        presaleAllocationPercent:
-          CFG.presaleAllocationPercent,
-
-        presaleAllocationTokens:
-          (CFG.totalSupply *
-            CFG.presaleAllocationPercent) /
-          100,
-
-        teamAllocationPercent:
-          CFG.teamPercent,
-
-        teamAllocationTokens:
-          (CFG.totalSupply *
-            CFG.teamPercent) /
-          100,
-
-        presalePriceUsd:
-          CFG.presalePriceUsd,
-
-        currentPriceUsd:
-          tierData.current.priceUsd,
-
-        listingPriceUsd:
-          CFG.listingPriceUsd,
-
-        solPriceUsd:
-          liveSolPriceUsd,
-
-        blockchain: 'Solana',
-
-        maxContributionSol:
-          CFG.maxWalletCapSol,
-
-        softCapSol:
-          CFG.softCapSol,
-
-        hardCapSol:
-          CFG.hardCapSol,
-
-        teamCliffMonths:
-          CFG.teamCliffMonths,
-
-        teamVestingMonths:
-          CFG.teamVestingMonths,
-
-        currentTier:
-          tierData.current,
-
-        nextTier:
-          tierData.next,
-
-        priceTiers:
-          tierData.tiers,
-      },
+      token: tokenInfo(
+        t.totalRaisedSol
+      ),
     });
   } catch (e) {
     console.error(e);
@@ -319,39 +320,14 @@ app.get('/stats', async (req, res) => {
 
 app.get('/balance/:wallet', async (req, res) => {
   try {
-    const wallet =
-      String(req.params.wallet);
+    const db = loadDb();
 
-    const purchases =
-      await getAllPurchases();
-
-    const mine = purchases.filter(
-      (p) =>
-        p.wallet.toLowerCase() ===
-        wallet.toLowerCase()
+    res.json(
+      walletTotals(
+        db,
+        req.params.wallet
+      )
     );
-
-    const solPaid =
-      mine.reduce(
-        (sum, p) => sum + p.solAmount,
-        0
-      );
-
-    const purchasedTokens =
-      mine.reduce(
-        (sum, p) => sum + p.tokenAmount,
-        0
-      );
-
-    res.json({
-      wallet,
-      tokenSymbol:
-        CFG.tokenSymbol,
-
-      solPaid,
-
-      purchasedTokens,
-    });
   } catch (e) {
     console.error(e);
 
@@ -365,10 +341,89 @@ app.post(
   '/register-purchase',
   async (req, res) => {
     try {
+      const wallet = String(
+        req.body.wallet || ''
+      ).trim();
+
+      const amount = Number(
+        req.body.amount || 0
+      );
+
+      const signature = String(
+        req.body.txSignature ||
+          req.body.signature ||
+          ''
+      ).trim();
+
+      if (!wallet) {
+        throw new Error('Missing wallet');
+      }
+
+      if (!amount || amount <= 0) {
+        throw new Error('Invalid amount');
+      }
+
+      if (!signature) {
+        throw new Error(
+          'Missing transaction signature'
+        );
+      }
+
+      const db = loadDb();
+
+      const duplicate =
+        db.purchases.find(
+          (p) =>
+            p.txSignature === signature
+        );
+
+      if (duplicate) {
+        return res.json({
+          success: true,
+          alreadyRegistered: true,
+        });
+      }
+
+      const solPriceUsd =
+        await getLiveSolPriceUsd();
+
+      const totalBefore =
+        totals(db).totalRaisedSol;
+
+      const tier =
+        getPriceTier(totalBefore).current;
+
+      const usdValue =
+        amount * solPriceUsd;
+
+      const tokenAmount =
+        usdValue / tier.priceUsd;
+
+      const purchase = {
+        wallet,
+
+        solAmount: amount,
+
+        tokenAmount,
+
+        txSignature: signature,
+
+        createdAt:
+          new Date().toISOString(),
+      };
+
+      db.purchases.push(purchase);
+
+      saveDb(db);
+
       res.json({
         success: true,
+
+        purchase,
       });
     } catch (e) {
+      console.error(e);
+
       res.status(400).json({
         error: e.message,
       });
@@ -376,6 +431,8 @@ app.post(
   }
 );
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`DesertMoon backend running on port ${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(
+    `DesertMoon backend running on port ${PORT}`
+  );
 });
